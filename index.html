@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaTrack - Controle de Hidratação</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#3B82F6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="AquaTrack">
+    <meta name="description" content="Controle sua hidratação diária com histórico pessoal">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'><path d='M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z'/></svg>" type="image/svg+xml">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        }
+        
+        .progress-circle {
+            transition: stroke-dasharray 0.5s ease-out;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        
+        .btn-hover:hover {
+            transform: scale(0.95);
+        }
+        
+        .btn-hover:active {
+            transform: scale(0.90);
+        }
+        
+        .btn-hover {
+            transition: transform 0.1s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        class AquaTrackApp {
+            constructor() {
+                this.state = {
+                    isLoggedIn: false,
+                    currentUser: '',
+                    loginForm: { username: '', password: '' },
+                    isRegistering: false,
+                    waterIntake: 0,
+                    dailyGoal: 2000,
+                    customAmount: 250,
+                    streak: 0,
+                    lastResetDate: new Date().toDateString(),
+                    userHistory: {},
+                    showHistory: false
+                };
+                
+                this.init();
+            }
+            
+            init() {
+                this.checkExistingUser();
+                this.render();
+            }
+            
+            checkExistingUser() {
+                const savedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+                if (savedUser) {
+                    this.state.currentUser = savedUser;
+                    this.state.isLoggedIn = true;
+                    this.loadUserData(savedUser);
+                }
+            }
+            
+            loadUserData(username) {
+                const userData = JSON.parse(localStorage.getItem(`userData_${username}`) || '{}');
+                const history = JSON.parse(localStorage.getItem(`history_${username}`) || '{}');
+                
+                this.state.waterIntake = userData.waterIntake || 0;
+                this.state.dailyGoal = userData.dailyGoal || 2000;
+                this.state.streak = userData.streak || 0;
+                this.state.lastResetDate = userData.lastResetDate || new Date().toDateString();
+                this.state.userHistory = history;
+                
+                this.checkNewDay(userData, username);
+            }
+            
+            checkNewDay(userData, username) {
+                const today = new Date().toDateString();
+                const lastDate = userData.lastResetDate || new Date().toDateString();
+                
+                if (lastDate !== today) {
+                    if (userData.waterIntake > 0) {
+                        const history = JSON.parse(localStorage.getItem(`history_${username}`) || '{}');
+                        history[lastDate] = {
+                            intake: userData.waterIntake,
+                            goal: userData.dailyGoal,
+                            achieved: userData.waterIntake >= userData.dailyGoal
+                        };
+                        localStorage.setItem(`history_${username}`, JSON.stringify(history));
+                        this.state.userHistory = history;
+                    }
+                    
+                    const newStreak = userData.waterIntake >= userData.dailyGoal ? (userData.streak || 0) + 1 : 0;
+                    
+                    this.state.waterIntake = 0;
+                    this.state.streak = newStreak;
+                    this.state.lastResetDate = today;
+                    
+                    this.saveUserData(username, {
+                        waterIntake: 0,
+                        dailyGoal: userData.dailyGoal || 2000,
+                        streak: newStreak,
+                        lastResetDate: today
+                    });
+                }
+            }
+            
+            saveUserData(username, data) {
+                localStorage.setItem(`userData_${username}`, JSON.stringify(data));
+            }
+            
+            autoSaveUserData() {
+                if (this.state.isLoggedIn && this.state.currentUser) {
+                    const userData = {
+                        waterIntake: this.state.waterIntake,
+                        dailyGoal: this.state.dailyGoal,
+                        streak: this.state.streak,
+                        lastResetDate: this.state.lastResetDate
+                    };
+                    this.saveUserData(this.state.currentUser, userData);
+                }
+            }
+            
+            handleLogin() {
+                if (!this.state.loginForm.username.trim()) {
+                    alert('Por favor, digite um nome de usuário');
+                    return;
+                }
+                
+                if (this.state.isRegistering) {
+                    if (!this.state.loginForm.password.trim() || this.state.loginForm.password.length < 4) {
+                        alert('A senha deve ter pelo menos 4 caracteres');
+                        return;
+                    }
+                    const users = JSON.parse(localStorage.getItem('users') || '{}');
+                    if (users[this.state.loginForm.username]) {
+                        alert('Nome de usuário já existe');
+                        return;
+                    }
+                    users[this.state.loginForm.username] = this.state.loginForm.password;
+                    localStorage.setItem('users', JSON.stringify(users));
+                } else {
+                    const users = JSON.parse(localStorage.getItem('users') || '{}');
+                    if (!users[this.state.loginForm.username] || users[this.state.loginForm.username] !== this.state.loginForm.password) {
+                        alert('Usuário ou senha incorretos');
+                        return;
+                    }
+                }
+                
+                this.state.currentUser = this.state.loginForm.username;
+                this.state.isLoggedIn = true;
+                localStorage.setItem('currentUser', JSON.stringify(this.state.loginForm.username));
+                this.loadUserData(this.state.loginForm.username);
+                this.state.loginForm = { username: '', password: '' };
+                this.render();
+            }
+            
+            handleLogout() {
+                this.state.isLoggedIn = false;
+                this.state.currentUser = '';
+                localStorage.removeItem('currentUser');
+                this.state.waterIntake = 0;
+                this.state.dailyGoal = 2000;
+                this.state.streak = 0;
+                this.state.userHistory = {};
+                this.state.showHistory = false;
+                this.render();
+            }
+            
+            addWater(amount) {
+                this.state.waterIntake += amount;
+                this.autoSaveUserData();
+                this.render();
+            }
+            
+            subtractWater(amount) {
+                this.state.waterIntake = Math.max(0, this.state.waterIntake - amount);
+                this.autoSaveUserData();
+                this.render();
+            }
+            
+            resetDay() {
+                this.state.waterIntake = 0;
+                this.autoSaveUserData();
+                this.render();
+            }
+            
+            updateCustomAmount(value) {
+                this.state.customAmount = Math.max(1, parseInt(value) || 1);
+                this.render();
+            }
+            
+            updateDailyGoal(value) {
+                this.state.dailyGoal = Math.max(500, parseInt(value) || 2000);
+                this.autoSaveUserData();
+                this.render();
+            }
+            
+            toggleHistory() {
+                this.state.showHistory = !this.state.showHistory;
+                this.render();
+            }
+            
+            toggleRegister() {
+                this.state.isRegistering = !this.state.isRegistering;
+                this.render();
+            }
+            
+            updateLoginForm(field, value) {
+                this.state.loginForm[field] = value;
+                this.render();
+            }
+            
+            getSVGIcon(name) {
+                const icons = {
+                    droplet: '<path d="M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z"/>',
+                    plus: '<path d="M12 5v14m-7-7h14"/>',
+                    minus: '<path d="M5 12h14"/>',
+                    award: '<path d="m9 12 2 2 4-4"/><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="m16 12 4 4-4 4"/>',
+                    target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+                    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+                    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+                    calendar: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+                    trending: '<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>',
+                    rotate: '<polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>'
+                };
+                return `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${icons[name] || ''}</svg>`;
+            }
+            
+            renderLoginScreen() {
+                return `
+                    <div class="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-100 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-3xl shadow-xl p-8 w-full max-w-md">
+                            <div class="text-center mb-8">
+                                <div class="flex items-center justify-center space-x-2 mb-4">
+                                    <svg class="w-12 h-12 text-blue-500" fill="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('droplet')}</svg>
+                                    <h1 class="text-3xl font-bold text-gray-800">AquaTrack</h1>
+                                </div>
+                                <p class="text-gray-600">Controle sua hidratação diária</p>
+                            </div>
+                            
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome de usuário</label>
+                                    <input
+                                        type="text"
+                                        value="${this.state.loginForm.username}"
+                                        onchange="app.updateLoginForm('username', this.value)"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="Digite seu nome de usuário"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                                    <input
+                                        type="password"
+                                        value="${this.state.loginForm.password}"
+                                        onchange="app.updateLoginForm('password', this.value)"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="Digite sua senha"
+                                    />
+                                </div>
+                                
+                                <button
+                                    onclick="app.handleLogin()"
+                                    class="w-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white py-3 px-4 rounded-xl font-medium hover:from-blue-600 hover:to-cyan-600 transition-colors duration-200 btn-hover"
+                                >
+                                    ${this.state.isRegistering ? 'Criar Conta' : 'Entrar'}
+                                </button>
+                                
+                                <div class="text-center">
+                                    <button
+                                        onclick="app.toggleRegister()"
+                                        class="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                    >
+                                        ${this.state.isRegistering ? 'Já tem conta? Fazer login' : 'Não tem conta? Criar uma'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            renderHistoryScreen() {
+                const historyDays = Object.keys(this.state.userHistory);
+                const totalDays = historyDays.length;
+                const achievedDays = historyDays.filter(date => this.state.userHistory[date].achieved).length;
+                const averageIntake = totalDays > 0 ? 
+                    Math.round(historyDays.reduce((sum, date) => sum + this.state.userHistory[date].intake, 0) / totalDays) : 0;
+                
+                const historyItems = historyDays.length > 0 ? 
+                    historyDays
+                        .sort((a, b) => new Date(b) - new Date(a))
+                        .slice(0, 30)
+                        .map(date => {
+                            const day = this.state.userHistory[date];
+                            const percentage = Math.round((day.intake / day.goal) * 100);
+                            return `
+                                <div class="bg-gray-50 p-4 rounded-xl">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="font-medium text-gray-800">
+                                            ${new Date(date).toLocaleDateString('pt-BR')}
+                                        </span>
+                                        ${day.achieved ? '<div class="bg-green-100 text-green-600 px-2 py-1 rounded-full text-xs font-medium">✓ Meta atingida</div>' : ''}
+                                    </div>
+                                    <div class="flex items-center justify-between text-sm text-gray-600">
+                                        <span>${day.intake}ml / ${day.goal}ml</span>
+                                        <span class="font-medium ${day.achieved ? 'text-green-600' : 'text-gray-500'}">${percentage}%</span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('') : 
+                    `<div class="text-center text-gray-500 py-8">
+                        <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('calendar')}</svg>
+                        <p>Nenhum histórico ainda</p>
+                        <p class="text-sm">Comece a registrar sua hidratação!</p>
+                    </div>`;
+                
+                return `
+                    <div class="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-100 p-4">
+                        <div class="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
+                            <div class="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h1 class="text-2xl font-bold">Seu Histórico</h1>
+                                    <button onclick="app.toggleHistory()" class="bg-white/20 rounded-full p-2 hover:bg-white/30 transition-colors btn-hover">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('target')}</svg>
+                                    </button>
+                                </div>
+                                <div class="flex items-center justify-between text-sm">
+                                    <span>Usuário: ${this.state.currentUser}</span>
+                                    <span>${totalDays} dias registrados</span>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6">
+                                <div class="grid grid-cols-3 gap-4 mb-6">
+                                    <div class="text-center bg-blue-50 p-4 rounded-xl">
+                                        <div class="text-2xl font-bold text-blue-600">${totalDays}</div>
+                                        <div class="text-xs text-gray-500">Total de Dias</div>
+                                    </div>
+                                    <div class="text-center bg-green-50 p-4 rounded-xl">
+                                        <div class="text-2xl font-bold text-green-600">${achievedDays}</div>
+                                        <div class="text-xs text-gray-500">Metas Atingidas</div>
+                                    </div>
+                                    <div class="text-center bg-cyan-50 p-4 rounded-xl">
+                                        <div class="text-2xl font-bold text-cyan-600">${averageIntake}</div>
+                                        <div class="text-xs text-gray-500">Média (ml)</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="space-y-3">
+                                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Histórico Detalhado</h3>
+                                    <div class="max-h-96 overflow-y-auto space-y-2">
+                                        ${historyItems}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            renderMainScreen() {
+                const progressPercentage = Math.min((this.state.waterIntake / this.state.dailyGoal) * 100, 100);
+                const isGoalReached = this.state.waterIntake >= this.state.dailyGoal;
+                const quickAmounts = [100, 250, 500, 750];
+                
+                return `
+                    <div class="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-100 p-4">
+                        <div class="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
+                            <div class="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center space-x-2">
+                                        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('droplet')}</svg>
+                                        <h1 class="text-2xl font-bold">AquaTrack</h1>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="flex items-center space-x-1 bg-white/20 rounded-full px-3 py-1">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('award')}</svg>
+                                            <span class="text-sm font-medium">${this.state.streak} dias</span>
+                                        </div>
+                                        <button onclick="app.handleLogout()" class="bg-white/20 rounded-full p-2 hover:bg-white/30 transition-colors btn-hover">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('logout')}</svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between text-sm">
+                                    <span>Olá, ${this.state.currentUser}!</span>
+                                    <span>${this.state.waterIntake}ml / ${this.state.dailyGoal}ml</span>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6">
+                                <div class="flex flex-col items-center mb-8">
+                                    <div class="relative w-48 h-48 mb-4">
+                                        <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                            <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" stroke-width="8"/>
+                                            <circle 
+                                                cx="50" cy="50" r="40" fill="none" 
+                                                stroke="${isGoalReached ? '#10b981' : '#3b82f6'}" 
+                                                stroke-width="8" stroke-linecap="round"
+                                                stroke-dasharray="${progressPercentage * 2.51}, 251.2"
+                                                class="progress-circle"
+                                            />
+                                        </svg>
+                                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                            <svg class="w-12 h-12 mb-2 ${isGoalReached ? 'text-green-500' : 'text-blue-500'}" fill="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('droplet')}</svg>
+                                            <div class="text-3xl font-bold text-gray-800">${Math.round(progressPercentage)}%</div>
+                                            <div class="text-sm text-gray-500">da meta diária</div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${isGoalReached ? `
+                                        <div class="flex items-center space-x-2 text-green-600 font-medium">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('target')}</svg>
+                                            <span>Meta Alcançada! 🎉</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                
+                                <div class="mb-6">
+                                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Adicionar Rapidamente</h3>
+                                    <div class="grid grid-cols-4 gap-2">
+                                        ${quickAmounts.map(amount => `
+                                            <button onclick="app.addWater(${amount})" class="bg-blue-100 hover:bg-blue-200 text-blue-800 py-3 px-2 rounded-xl font-medium transition-colors duration-200 text-sm btn-hover">
+                                                +${amount}ml
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-6">
+                                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Quantidade Personalizada</h3>
+                                    <div class="flex items-center space-x-3">
+                                        <button onclick="app.subtractWater(${this.state.customAmount})" class="bg-red-100 hover:bg-red-200 text-red-600 p-2 rounded-xl transition-colors duration-200 btn-hover">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('minus')}</svg>
+                                        </button>
+                                        <div class="flex-1 flex items-center space-x-2">
+                                            <input
+                                                type="number"
+                                                value="${this.state.customAmount}"
+                                                onchange="app.updateCustomAmount(this.value)"
+                                                class="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                min="1"
+                                            />
+                                            <span class="text-gray-600">ml</span>
+                                        </div>
+                                        <button onclick="app.addWater(${this.state.customAmount})" class="bg-green-100 hover:bg-green-200 text-green-600 p-2 rounded-xl transition-colors duration-200 btn-hover">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('plus')}</svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-6">
+                                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Meta Diária</h3>
+                                    <div class="flex items-center space-x-3">
+                                        <input
+                                            type="number"
+                                            value="${this.state.dailyGoal}"
+                                            onchange="app.updateDailyGoal(this.value)"
+                                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            min="500"
+                                            step="250"
+                                        />
+                                        <span class="text-gray-600">ml</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-3">
+                                    <button onclick="app.toggleHistory()" class="bg-cyan-100 hover:bg-cyan-200 text-cyan-700 py-3 px-4 rounded-xl font-medium transition-colors duration-200 flex items-center justify-center space-x-2 btn-hover">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('trending')}</svg>
+                                        <span>Histórico</span>
+                                    </button>
+                                    <button onclick="app.resetDay()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-xl font-medium transition-colors duration-200 flex items-center justify-center space-x-2 btn-hover">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${this.getSVGIcon('rotate')}</svg>
+                                        <span>Resetar</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-gray-50 px-6 py-4">
+                                <div class="grid grid-cols-3 gap-4 text-center">
+                                    <div>
+                                        <div class="text-2xl font-bold text-blue-600">${this.state.waterIntake}</div>
+                                        <div class="text-xs text-gray-500">Hoje (ml)</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-2xl font-bold text-cyan-600">${this.state.streak}</div>
+                                        <div class="text-xs text-gray-500">Sequência</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-2xl font-bold text-green-600">${Math.round(progressPercentage)}%</div>
+                                        <div class="text-xs text-gray-500">Completo</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            render() {
+                let content;
+                
+                if (!this.state.isLoggedIn) {
+                    content = this.renderLoginScreen
